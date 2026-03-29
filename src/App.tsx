@@ -47,7 +47,11 @@ const App = () => {
   // prev2DData   : snapshot taken at the START of each mouse stroke; the eraser
   //               reads from here so it restores whatever was under the brush
   //               before the current stroke began, not just a hard-coded 0.
-  const image2DData = useRef<number[][]>(Array.from({ length: CANVASHEIGHT }, () => new Array<number>(CANVASWIDTH).fill(0)));
+  const image2DData = useRef<number[][]>(
+    Array.from({ length: CANVASHEIGHT }, () =>
+      new Array<number>(CANVASWIDTH).fill(0),
+    ),
+  );
 
   const isMouseDownRef = useRef(false);
 
@@ -122,7 +126,7 @@ const App = () => {
 
     for (let dy = -half; dy <= half; dy++) {
       for (let dx = -half; dx <= half; dx++) {
-        const px = cx + dx;   
+        const px = cx + dx;
         const py = cy + dy;
 
         if (px < 0 || px >= CANVASWIDTH) continue;
@@ -131,7 +135,7 @@ const App = () => {
         if (isEraser) {
           // ── ERASE ─────────────────────────────────────────────────────
           image2DData.current[py][px] = 0;
-          ctx.clearRect(px,py, 1, 1); 
+          ctx.clearRect(px, py, 1, 1);
           ctx.globalCompositeOperation = "source-over";
           ctx.fillStyle = "rgba(0,0,0,0.8)";
           ctx.fillRect(px, py, 1, 1);
@@ -194,7 +198,9 @@ const App = () => {
         ctx.drawImage(img, 0, 0, CANVASWIDTH, CANVASHEIGHT);
 
         // Reset both matrices when a new image is loaded
-        image2DData.current = Array.from({ length: CANVASHEIGHT }, () => new Array<number>(CANVASWIDTH).fill(0));
+        image2DData.current = Array.from({ length: CANVASHEIGHT }, () =>
+          new Array<number>(CANVASWIDTH).fill(0),
+        );
 
         setHasImage(true);
         applyOverlay();
@@ -222,7 +228,9 @@ const App = () => {
       if (ctx) ctx.clearRect(0, 0, CANVASWIDTH, CANVASHEIGHT);
     }
 
-    image2DData.current = Array.from({ length: CANVASHEIGHT }, () => new Array<number>(CANVASWIDTH).fill(0));
+    image2DData.current = Array.from({ length: CANVASHEIGHT }, () =>
+      new Array<number>(CANVASWIDTH).fill(0),
+    );
 
     setHasImage(false);
     setIsDrawMode(false);
@@ -320,7 +328,11 @@ const App = () => {
 
       <div className="mb-4 flex items-center flex-wrap gap-2">
         {/* CATEGORY */}
-        <select value={selectedCategory} onChange={(e) => setSelectedCategory(Number(e.target.value))} className="p-2 border border-gray-300 rounded">
+        <select
+          value={selectedCategory}
+          onChange={(e) => setSelectedCategory(Number(e.target.value))}
+          className="p-2 border border-gray-300 rounded"
+        >
           {categories.map((cat) => (
             <option key={cat.value} value={cat.value}>
               {cat.name}
@@ -330,43 +342,83 @@ const App = () => {
 
         {/* BRUSH SIZE */}
         {brushSizes.map((size) => (
-          <button key={size} onClick={() => setBrushSize(size)} className={`px-3 py-2 ${brushSize === size ? "bg-gray-700 text-white" : "bg-white border"}`}>
+          <button
+            key={size}
+            onClick={() => setBrushSize(size)}
+            className={`px-3 py-2 ${brushSize === size ? "bg-gray-700 text-white" : "bg-white border"}`}
+          >
             {size}px
           </button>
         ))}
 
         {/* DRAW MODE */}
-        <button onClick={() => setIsDrawMode((p) => !p)} disabled={!hasImage} className="px-4 py-2 bg-green-500 text-white rounded disabled:opacity-50">
+        <button
+          onClick={() => setIsDrawMode((p) => !p)}
+          disabled={!hasImage}
+          className="px-4 py-2 bg-green-500 text-white rounded disabled:opacity-50"
+        >
           {isDrawMode ? "Drawing ON" : "Draw"}
         </button>
 
         {/* ERASER */}
-        <button onClick={() => setIsEraser((p) => !p)} disabled={!hasImage} className={`px-4 py-2 rounded disabled:opacity-50 ${isEraser ? "bg-yellow-500 text-white" : "bg-white border"}`}>
+        <button
+          onClick={() => setIsEraser((p) => !p)}
+          disabled={!hasImage}
+          className={`px-4 py-2 rounded disabled:opacity-50 ${isEraser ? "bg-yellow-500 text-white" : "bg-white border"}`}
+        >
           {isEraser ? "Eraser ON" : "Eraser"}
         </button>
 
         {/* FILE INPUT */}
-        <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} className="p-2 border border-gray-300 rounded" />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleImageUpload}
+          className="p-2 border border-gray-300 rounded"
+        />
 
         {/* CLEAR */}
-        <button onClick={clearCanvas} className="p-2 bg-red-500 text-white rounded">
+        <button
+          onClick={clearCanvas}
+          className="p-2 bg-red-500 text-white rounded"
+        >
           Clear Canvas
         </button>
 
         {/* LOG MATRIX */}
-        <button onClick={() => console.log(image2DData.current)} className="p-2 bg-blue-500 text-white rounded">
+        <button
+          onClick={() => console.log(image2DData.current)}
+          className="p-2 bg-blue-500 text-white rounded"
+        >
           Log Matrix
         </button>
 
         {/* ⭐ FINALIZE */}
-        <button onClick={handleFinalize} disabled={!hasImage} className="px-4 py-2 bg-purple-600 text-white rounded disabled:opacity-50 font-semibold">
+        <button
+          onClick={handleFinalize}
+          disabled={!hasImage}
+          className="px-4 py-2 bg-purple-600 text-white rounded disabled:opacity-50 font-semibold"
+        >
           Finalize
         </button>
       </div>
 
-      <div style={{ position: "relative", width: CANVASWIDTH, height: CANVASHEIGHT }}>
+      <div
+        style={{
+          position: "relative",
+          width: CANVASWIDTH,
+          height: CANVASHEIGHT,
+        }}
+      >
         {/* Bottom layer: the actual image */}
-        <canvas ref={imageCanvasRef} width={CANVASWIDTH} height={CANVASHEIGHT} className="border rounded-xs" style={{ position: "absolute" }} />
+        <canvas
+          ref={imageCanvasRef}
+          width={CANVASWIDTH}
+          height={CANVASHEIGHT}
+          className="border rounded-xs"
+          style={{ position: "absolute" }}
+        />
 
         {/* Top layer: dark overlay + holes + outline */}
         <canvas
