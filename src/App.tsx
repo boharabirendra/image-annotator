@@ -48,7 +48,6 @@ const App = () => {
   //               reads from here so it restores whatever was under the brush
   //               before the current stroke began, not just a hard-coded 0.
   const image2DData = useRef<number[][]>(Array.from({ length: CANVASHEIGHT }, () => new Array<number>(CANVASWIDTH).fill(0)));
-  const prev2DData = useRef<number[][]>(Array.from({ length: CANVASHEIGHT }, () => new Array<number>(CANVASWIDTH).fill(0)));
 
   const isMouseDownRef = useRef(false);
 
@@ -158,17 +157,6 @@ const App = () => {
 
     isMouseDownRef.current = true;
 
-    // ⭐ Only snapshot when DRAWING, never when erasing.
-    //
-    // If we snapshotted on every mousedown (including eraser strokes),
-    // prev2DData would immediately reflect the current drawn state,
-    // making it impossible to restore what was there before drawing.
-    // By skipping the snapshot in eraser mode, prev2DData always holds
-    // the state from the last draw stroke — exactly what should be restored.
-    if (!isEraser) {
-      prev2DData.current = image2DData.current.map((row) => row.slice());
-    }
-
     const { x, y } = getCoords(e);
     revealBrush(x, y);
   };
@@ -207,7 +195,6 @@ const App = () => {
 
         // Reset both matrices when a new image is loaded
         image2DData.current = Array.from({ length: CANVASHEIGHT }, () => new Array<number>(CANVASWIDTH).fill(0));
-        prev2DData.current = Array.from({ length: CANVASHEIGHT }, () => new Array<number>(CANVASWIDTH).fill(0));
 
         setHasImage(true);
         applyOverlay();
@@ -236,7 +223,6 @@ const App = () => {
     }
 
     image2DData.current = Array.from({ length: CANVASHEIGHT }, () => new Array<number>(CANVASWIDTH).fill(0));
-    prev2DData.current = Array.from({ length: CANVASHEIGHT }, () => new Array<number>(CANVASWIDTH).fill(0));
 
     setHasImage(false);
     setIsDrawMode(false);
