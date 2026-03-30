@@ -3,11 +3,6 @@ import React, { useState, useRef, useEffect } from "react";
 import { CANVASHEIGHT, CANVASWIDTH } from "./constants";
 
 // ─── Morphological dilation (circular kernel, scanline-optimised) ────────────
-//
-// For each pixel that is SET in `mask`, we mark all pixels within `radius`
-// pixels of it (Euclidean) in the output.  Using a per-row x-range avoids the
-// inner dx/dy double-loop and lets us use TypedArray.fill for bulk writes,
-// making this fast enough for finalize on large canvases.
 const dilate = (mask: Uint8Array, radius: number): Uint8Array => {
   const result = new Uint8Array(CANVASWIDTH * CANVASHEIGHT);
   const r2 = radius * radius;
@@ -32,21 +27,11 @@ const dilate = (mask: Uint8Array, radius: number): Uint8Array => {
 };
 
 // ─── App ─────────────────────────────────────────────────────────────────────
-
 const App = () => {
   const imageCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Annotation matrices ──────────────────────────────────────────────────
-  //
-  // MUST be refs — plain `let` variables inside a component body are
-  // re-initialised on every render, so all accumulated data is silently lost.
-  //
-  // image2DData  : current live annotation state (0 = unannotated, 1–4 = category)
-  // prev2DData   : snapshot taken at the START of each mouse stroke; the eraser
-  //               reads from here so it restores whatever was under the brush
-  //               before the current stroke began, not just a hard-coded 0.
   const image2DData = useRef<number[][]>(
     Array.from({ length: CANVASHEIGHT }, () =>
       new Array<number>(CANVASWIDTH).fill(0),
@@ -81,8 +66,6 @@ const App = () => {
   }, []);
 
   // ── Overlay helpers ──────────────────────────────────────────────────────
-
-  /** Fill the overlay canvas with a semi-transparent dark mask. */
   const applyOverlay = () => {
     const overlayCanvas = overlayCanvasRef.current;
     if (!overlayCanvas) return;
@@ -95,7 +78,6 @@ const App = () => {
   };
 
   // ── Coordinate helper ────────────────────────────────────────────────────
-
   const getCoords = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = overlayCanvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -107,15 +89,6 @@ const App = () => {
   };
 
   // ── Core draw / erase function ───────────────────────────────────────────
-  //
-  // DRAW  : punch a hole through the dark overlay (destination-out) and record
-  //         the selected category in image2DData.
-  //
-  // ERASE : per pixel, restore the value that was in prev2DData (snapshotted
-  //         at mousedown).  If prev was 0 the pixel was unannotated, so repaint
-  //         it with the dark overlay colour.  If prev was non-zero the pixel
-  //         was already revealed under a different (or the same) category, so
-  //         we leave the hole open and just update image2DData.
   const revealBrush = (cx: number, cy: number) => {
     const overlayCanvas = overlayCanvasRef.current;
     if (!overlayCanvas) return;
@@ -133,14 +106,12 @@ const App = () => {
         if (py < 0 || py >= CANVASHEIGHT) continue;
 
         if (isEraser) {
-          // ── ERASE ─────────────────────────────────────────────────────
           image2DData.current[py][px] = 0;
           ctx.clearRect(px, py, 1, 1);
           ctx.globalCompositeOperation = "source-over";
           ctx.fillStyle = "rgba(0,0,0,0.8)";
           ctx.fillRect(px, py, 1, 1);
         } else {
-          // ── DRAW ──────────────────────────────────────────────────────
           image2DData.current[py][px] = selectedCategory;
           ctx.globalCompositeOperation = "destination-out";
           ctx.fillStyle = "rgba(0,0,0,1)";
@@ -149,12 +120,10 @@ const App = () => {
       }
     }
 
-    // Always reset composite op after drawing
     ctx.globalCompositeOperation = "source-over";
   };
 
   // ── Mouse event handlers ─────────────────────────────────────────────────
-
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDrawMode || !hasImage) return;
     if (e.button !== 0) return;
@@ -175,12 +144,12 @@ const App = () => {
   const handleMouseUp = () => {
     isMouseDownRef.current = false;
   };
+
   const handleMouseLeave = () => {
     isMouseDownRef.current = false;
   };
 
   // ── Image upload ─────────────────────────────────────────────────────────
-
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -197,7 +166,6 @@ const App = () => {
         ctx.clearRect(0, 0, CANVASWIDTH, CANVASHEIGHT);
         ctx.drawImage(img, 0, 0, CANVASWIDTH, CANVASHEIGHT);
 
-        // Reset both matrices when a new image is loaded
         image2DData.current = Array.from({ length: CANVASHEIGHT }, () =>
           new Array<number>(CANVASWIDTH).fill(0),
         );
@@ -211,7 +179,6 @@ const App = () => {
   };
 
   // ── Clear ────────────────────────────────────────────────────────────────
-
   const clearCanvas = () => {
     const imageCanvas = imageCanvasRef.current;
     if (imageCanvas) {
@@ -239,26 +206,6 @@ const App = () => {
   };
 
   // ── Finalize ─────────────────────────────────────────────────────────────
-  //
-  // Redraws the entire overlay from scratch using image2DData, then adds a
-  // Photoshop-style outline:
-  //
-  //   GAP          = 3 px empty ring between the annotated shape and the stroke
-  //   STROKE_WIDTH = 2 px white outline just outside the gap
-  //
-  // Algorithm:
-  //   1. Build a binary mask from image2DData.
-  //   2. Dilate the mask by GAP pixels            → gapDilated
-  //   3. Dilate the mask by GAP + STROKE_WIDTH    → strokeDilated
-  //   4. Outline pixels = strokeDilated AND NOT gapDilated
-  //
-  // Everything is written in a single ImageData pass for performance:
-  //   • Annotated pixels     → alpha 0   (transparent, reveals image below)
-  //   • Outline pixels       → white, fully opaque
-  //   • Everything else      → dark overlay (rgba 0,0,0,0.8)
-  //
-  // Because we rebuild from image2DData, clicking Finalize multiple times is
-  // safe and idempotent — it simply regenerates the outline.
   const handleFinalize = () => {
     const overlayCanvas = overlayCanvasRef.current;
     if (!overlayCanvas) return;
@@ -267,7 +214,6 @@ const App = () => {
 
     const data = image2DData.current;
 
-    // ── Step 1: build binary mask ────────────────────────────────────────
     const mask = new Uint8Array(CANVASWIDTH * CANVASHEIGHT);
     let hasAnnotations = false;
 
@@ -282,14 +228,12 @@ const App = () => {
 
     if (!hasAnnotations) return;
 
-    // ── Step 2–3: compute gap and stroke zones ───────────────────────────
     const GAP = 3;
     const STROKE_WIDTH = 2;
 
     const gapDilated = dilate(mask, GAP);
     const strokeDilated = dilate(mask, GAP + STROKE_WIDTH);
 
-    // ── Step 4: build ImageData in one pass ─────────────────────────────
     const imageData = ctx.createImageData(CANVASWIDTH, CANVASHEIGHT);
     const pixels = imageData.data;
 
@@ -297,19 +241,16 @@ const App = () => {
       const base = i * 4;
 
       if (mask[i]) {
-        // Annotated: fully transparent → image canvas shows through
-        pixels[base] = 0;
-        pixels[base + 1] = 0;
-        pixels[base + 2] = 0;
-        pixels[base + 3] = 0;
+        pixels[base] = 0; // R
+        pixels[base + 1] = 0; // G
+        pixels[base + 2] = 0; // B
+        pixels[base + 3] = 0; // A
       } else if (strokeDilated[i] && !gapDilated[i]) {
-        // Outline ring: solid white
         pixels[base] = 255;
         pixels[base + 1] = 255;
         pixels[base + 2] = 255;
         pixels[base + 3] = 255;
       } else {
-        // Normal dark overlay (rgba 0,0,0,0.8  →  alpha ≈ 204)
         pixels[base] = 0;
         pixels[base + 1] = 0;
         pixels[base + 2] = 0;
@@ -320,8 +261,64 @@ const App = () => {
     ctx.putImageData(imageData, 0, 0);
   };
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  // ── Export as 1‑channel‑style grayscale PNG ─────────────────────────────
+  const handleExport = () => {
+    const data = image2DData.current;
 
+    const exportCanvas = document.createElement("canvas");
+    exportCanvas.width = CANVASWIDTH;
+    exportCanvas.height = CANVASHEIGHT;
+    const ctx = exportCanvas.getContext("2d");
+    if (!ctx) return;
+
+    const imageData = ctx.createImageData(CANVASWIDTH, CANVASHEIGHT);
+    const pixels = imageData.data;
+
+    for (let y = 0; y < CANVASHEIGHT; y++) {
+      for (let x = 0; x < CANVASWIDTH; x++) {
+        const val = data[y][x]; // 0–4
+        let gray: number;
+        switch (val) {
+          case 0:
+            gray = 0;
+            break;
+          case 1:
+            gray = 64;
+            break;
+          case 2:
+            gray = 128;
+            break;
+          case 3:
+            gray = 192;
+            break;
+          case 4:
+            gray = 255;
+            break;
+          default:
+            gray = 0;
+        }
+        const i = (y * CANVASWIDTH + x) * 4;
+        pixels[i] = gray; // R
+        pixels[i + 1] = gray; // G
+        pixels[i + 2] = gray; // B
+        pixels[i + 3] = 255; // fully opaque
+      }
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+
+    exportCanvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "annotation_mask.png";
+      link.click();
+      URL.revokeObjectURL(url);
+    }, "image/png");
+  };
+
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
       <h1 className="text-2xl font-bold mb-4">Image Annotator</h1>
@@ -345,7 +342,9 @@ const App = () => {
           <button
             key={size}
             onClick={() => setBrushSize(size)}
-            className={`px-3 py-2 ${brushSize === size ? "bg-gray-700 text-white" : "bg-white border"}`}
+            className={`px-3 py-2 ${
+              brushSize === size ? "bg-gray-700 text-white" : "bg-white border"
+            }`}
           >
             {size}px
           </button>
@@ -364,7 +363,9 @@ const App = () => {
         <button
           onClick={() => setIsEraser((p) => !p)}
           disabled={!hasImage}
-          className={`px-4 py-2 rounded disabled:opacity-50 ${isEraser ? "bg-yellow-500 text-white" : "bg-white border"}`}
+          className={`px-4 py-2 rounded disabled:opacity-50 ${
+            isEraser ? "bg-yellow-500 text-white" : "bg-white border"
+          }`}
         >
           {isEraser ? "Eraser ON" : "Eraser"}
         </button>
@@ -394,13 +395,22 @@ const App = () => {
           Log Matrix
         </button>
 
-        {/* ⭐ FINALIZE */}
+        {/* FINALIZE */}
         <button
           onClick={handleFinalize}
           disabled={!hasImage}
           className="px-4 py-2 bg-purple-600 text-white rounded disabled:opacity-50 font-semibold"
         >
           Finalize
+        </button>
+
+        {/* EXPORT */}
+        <button
+          onClick={handleExport}
+          disabled={!hasImage}
+          className="px-4 py-2 bg-indigo-600 text-white rounded disabled:opacity-50 font-semibold"
+        >
+          Export PNG (1‑ch)
         </button>
       </div>
 
